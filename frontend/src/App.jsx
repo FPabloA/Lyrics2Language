@@ -7,11 +7,96 @@ function App() {
   const [selectedSong, setSelectedSong] = useState(null)
   const [status, setStatus] = useState('idle')
   const [error, setError] = useState('')
+  const [sourceLanguage, setSourceLanguage] = useState('auto')
+  const [targetLanguage, setTargetLanguage] = useState('en')
+  const [translatedLyrics, setTranslatedLyrics] = useState('')
+  const [translationStatus, setTranslationStatus] = useState('idle')
+  const [translationError, setTranslationError] = useState('')
   const currentRequest = useRef(null)
 
   useEffect(() => {
     return () => currentRequest.current?.abort()
   }, [])
+
+  useEffect(() => {
+    const lyrics = selectedSong?.plainLyrics || selectedSong?.syncedLyrics
+    if (!selectedSong || !lyrics) return
+
+    const controller = new AbortController()
+
+    async function translateLyrics() {
+      try {
+        const response = await fetch('http://localhost:5000/translate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: new URLSearchParams({
+            q: lyrics,
+            source: sourceLanguage,
+            target: targetLanguage,
+            format: 'text',
+          }),
+          signal: controller.signal,
+        })
+
+        if (!response.ok) {
+          throw new Error(`LibreTranslate returned an error (${response.status}).`)
+        }
+
+        const data = await response.json()
+        if (typeof data.translatedText !== 'string') {
+          throw new Error('LibreTranslate returned an unexpected response.')
+        }
+
+        setTranslatedLyrics(data.translatedText)
+        setTranslationStatus('success')
+      } catch (requestError) {
+        if (requestError.name === 'AbortError') return
+
+        setTranslationError(
+          requestError instanceof TypeError
+            ? 'Could not connect to LibreTranslate. Make sure it is running on port 5000 and allows requests from this app.'
+            : requestError.message || 'Unable to translate these lyrics.',
+        )
+        setTranslationStatus('error')
+      }
+    }
+
+    translateLyrics()
+    return () => controller.abort()
+  }, [selectedSong, sourceLanguage, targetLanguage])
+
+  function selectSong(song) {
+    setSelectedSong(song)
+    setTranslatedLyrics('')
+    setTranslationError('')
+    setTranslationStatus(
+      song.plainLyrics || song.syncedLyrics ? 'loading' : 'idle',
+    )
+  }
+
+  function handleTargetLanguageChange(event) {
+    setTargetLanguage(event.target.value)
+    setTranslatedLyrics('')
+    setTranslationError('')
+    setTranslationStatus(
+      selectedSong?.plainLyrics || selectedSong?.syncedLyrics
+        ? 'loading'
+        : 'idle',
+    )
+  }
+
+  function handleSourceLanguageChange(event) {
+    setSourceLanguage(event.target.value)
+    setTranslatedLyrics('')
+    setTranslationError('')
+    setTranslationStatus(
+      selectedSong?.plainLyrics || selectedSong?.syncedLyrics
+        ? 'loading'
+        : 'idle',
+    )
+  }
 
   async function handleSearch(event) {
     event.preventDefault()
@@ -143,15 +228,84 @@ function App() {
                 {selectedSong.artistName || 'Unknown artist'}
               </p>
             </header>
-            {selectedSong.plainLyrics || selectedSong.syncedLyrics ? (
-              <pre className="song-lyrics">
-                {selectedSong.plainLyrics || selectedSong.syncedLyrics}
-              </pre>
-            ) : (
-              <p className="lyrics-unavailable">
-                Lyrics are not available for this song.
-              </p>
-            )}
+            <div className="song-columns">
+              <section className="lyrics-panel" aria-labelledby="original-lyrics-title">
+                <div className="language-heading">
+                  <h2 id="original-lyrics-title">Original lyrics</h2>
+                  <label className="visually-hidden" htmlFor="source-language">
+                    Original lyrics language
+                  </label>
+                  <select
+                    id="source-language"
+                    value={sourceLanguage}
+                    onChange={handleSourceLanguageChange}
+                  >
+                    <option value="auto">Auto-detect</option>
+                    <option value="en">English</option>
+                    <option value="es">Spanish</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                    <option value="it">Italian</option>
+                    <option value="pt">Portuguese</option>
+                    <option value="ja">Japanese</option>
+                    <option value="ko">Korean</option>
+                    <option value="zh-Hans">Chinese (Simplified)</option>
+                    <option value="zh-Hant">Chinese (Traditional)</option>
+                  </select>
+                </div>
+                {selectedSong.plainLyrics || selectedSong.syncedLyrics ? (
+                  <pre className="song-lyrics">
+                    {selectedSong.plainLyrics || selectedSong.syncedLyrics}
+                  </pre>
+                ) : (
+                  <p className="lyrics-unavailable">
+                    Lyrics are not available for this song.
+                  </p>
+                )}
+              </section>
+              <section className="lyrics-panel" aria-labelledby="translated-lyrics-title">
+                <div className="language-heading">
+                  <h2 id="translated-lyrics-title">Translation</h2>
+                  <label className="visually-hidden" htmlFor="target-language">
+                    Translation language
+                  </label>
+                  <select
+                    id="target-language"
+                    value={targetLanguage}
+                    onChange={handleTargetLanguageChange}
+                  >
+                    <option value="en">English</option>
+                    <option value="es">Spanish</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                    <option value="it">Italian</option>
+                    <option value="pt">Portuguese</option>
+                    <option value="ja">Japanese</option>
+                    <option value="ko">Korean</option>
+                    <option value="zh-Hans">Chinese (Simplified)</option>
+                    <option value="zh-Hant">Chinese (Traditional)</option>
+                  </select>
+                </div>
+                {translationStatus === 'loading' && (
+                  <p className="translation-message" aria-live="polite">
+                    Translating lyrics…
+                  </p>
+                )}
+                {translationStatus === 'error' && (
+                  <p className="translation-error" role="alert">
+                    {translationError}
+                  </p>
+                )}
+                {translationStatus === 'success' && (
+                  <pre className="song-lyrics">{translatedLyrics}</pre>
+                )}
+                {translationStatus === 'idle' && (
+                  <p className="lyrics-unavailable">
+                    No lyrics available to translate.
+                  </p>
+                )}
+              </section>
+            </div>
           </article>
         </main>
       ) : (
@@ -190,7 +344,7 @@ function App() {
                       type="button"
                       className="lyrics-card"
                       key={song.id ?? `${song.trackName}-${song.artistName}-${index}`}
-                      onClick={() => setSelectedSong(song)}
+                      onClick={() => selectSong(song)}
                     >
                       <h3>{song.trackName || 'Untitled song'}</h3>
                       <div className="lyrics-card-details">

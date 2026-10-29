@@ -191,6 +191,61 @@
   font-size: 16px;
 }
 
+.song-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  padding-top: 24px;
+}
+
+.lyrics-panel {
+  min-width: 0;
+}
+
+.lyrics-panel h2 {
+  margin: 0;
+  color: #514d60;
+  font-size: 15px;
+}
+
+.language-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.language-heading select {
+  max-width: 145px;
+  padding: 7px 28px 7px 10px;
+  color: #393548;
+  font: inherit;
+  font-size: 13px;
+  background: #f7f6fa;
+  border: 1px solid #eeedf3;
+  border-radius: 8px;
+}
+
+.language-heading select:focus-visible {
+  outline: 3px solid #b69be9;
+  outline-offset: 2px;
+}
+
+.lyrics-panel .song-lyrics {
+  margin-top: 16px;
+}
+
+.translation-message,
+.translation-error {
+  margin: 16px 0 0;
+  color: #777383;
+  font-size: 14px;
+}
+
+.translation-error {
+  color: #a8324a;
+}
+
 .page-intro {
   margin-bottom: 36px;
   text-align: center;
@@ -405,6 +460,11 @@
 
   .song-detail {
     padding: 20px;
+  }
+
+  .song-columns {
+    grid-template-columns: 1fr;
+    gap: 28px;
   }
 }
 
