@@ -10,6 +10,17 @@ function getLyricLines(lyrics = '') {
     .filter(Boolean)
 }
 
+function shuffleIndices(length) {
+  const order = Array.from({ length }, (_, index) => index)
+  for (let index = order.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1))
+    const currentIndex = order[index]
+    order[index] = order[randomIndex]
+    order[randomIndex] = currentIndex
+  }
+  return order
+}
+
 function FlashcardStudy({
   originalLines,
   translatedLines,
@@ -111,6 +122,176 @@ function FlashcardStudy({
   )
 }
 
+function FlashcardQuiz({
+  originalLines,
+  translatedLines,
+  status,
+  error,
+  order,
+  onToggleShuffle,
+}) {
+  const [index, setIndex] = useState(0)
+  const [answer, setAnswer] = useState('')
+  const [submitted, setSubmitted] = useState(false)
+  const [score, setScore] = useState(0)
+  const [complete, setComplete] = useState(false)
+  const lineIndex = order[index] ?? index
+
+  if (status === 'loading') {
+    return (
+      <p className="flashcard-message" aria-live="polite">
+        Preparing quiz…
+      </p>
+    )
+  }
+
+  if (status === 'error') {
+    return (
+      <p className="flashcard-error" role="alert">
+        {error}
+      </p>
+    )
+  }
+
+  if (originalLines.length === 0) {
+    return (
+      <p className="flashcard-message">
+        Lyrics are not available for this quiz.
+      </p>
+    )
+  }
+
+  if (complete) {
+    return (
+      <section className="quiz-complete" aria-live="polite">
+        <div className="flashcard-toolbar">
+          <p className="flashcard-count">
+            {order.length > 0 ? 'Shuffle on' : 'Original order'}
+          </p>
+          <button
+            type="button"
+            className="shuffle-button"
+            aria-pressed={order.length > 0}
+            onClick={onToggleShuffle}
+          >
+            {order.length > 0 ? 'Turn shuffle off' : 'Shuffle quiz'}
+          </button>
+        </div>
+        <p className="eyebrow">Quiz complete</p>
+        <h2>
+          You got {score} out of {originalLines.length} correct
+        </h2>
+        <button
+          type="button"
+          className="flashcard-mode-button"
+          onClick={() => {
+            setIndex(0)
+            setAnswer('')
+            setSubmitted(false)
+            setScore(0)
+            setComplete(false)
+          }}
+        >
+          Try again
+        </button>
+      </section>
+    )
+  }
+
+  const translation = translatedLines[lineIndex]
+
+  function assessAnswer(wasCorrect) {
+    if (wasCorrect) {
+      setScore((currentScore) => currentScore + 1)
+    }
+
+    if (index === originalLines.length - 1) {
+      setComplete(true)
+      return
+    }
+
+    setIndex((currentIndex) => currentIndex + 1)
+    setAnswer('')
+    setSubmitted(false)
+  }
+
+  return (
+    <section className="quiz-study" aria-label="Lyrics translation quiz">
+      <div className="flashcard-toolbar">
+        <p className="flashcard-count">
+          {order.length > 0 ? 'Shuffle on' : 'Original order'}
+        </p>
+        <button
+          type="button"
+          className="shuffle-button"
+          aria-pressed={order.length > 0}
+          onClick={onToggleShuffle}
+        >
+          {order.length > 0 ? 'Turn shuffle off' : 'Shuffle quiz'}
+        </button>
+      </div>
+      {translatedLines.length !== originalLines.length && (
+        <p className="flashcard-message">
+          Some translated lines may not align with the original lyrics.
+        </p>
+      )}
+      <p className="flashcard-count">
+        Question {index + 1} of {originalLines.length}
+      </p>
+      <div className="quiz-card">
+        <p className="flashcard-side-label">Translate this lyric</p>
+        <p className="flashcard-text">{originalLines[lineIndex]}</p>
+      </div>
+      {!submitted ? (
+        <form
+          className="quiz-answer-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            if (answer.trim()) setSubmitted(true)
+          }}
+        >
+          <label htmlFor="quiz-answer">Your translation</label>
+          <textarea
+            id="quiz-answer"
+            value={answer}
+            onChange={(event) => setAnswer(event.target.value)}
+            placeholder="Type your translation…"
+            rows={3}
+            required
+          />
+          <button
+            type="submit"
+            className="flashcard-mode-button"
+            disabled={!answer.trim()}
+          >
+            Check answer
+          </button>
+        </form>
+      ) : (
+        <div className="quiz-reveal">
+          <p className="quiz-reveal-label">Your answer</p>
+          <p className="quiz-user-answer">{answer}</p>
+          <p className="flashcard-side-label">Direct translation</p>
+          <p className="quiz-translation">
+            {translation || 'No matching translated line is available.'}
+          </p>
+          <p className="quiz-assessment-prompt">
+            Was your answer correct?
+          </p>
+          <div className="quiz-assessment">
+            <button type="button" onClick={() => assessAnswer(true)}>
+              I got it right
+            </button>
+            <button type="button" onClick={() => assessAnswer(false)}>
+              I got it wrong
+            </button>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}
+
 function App() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
@@ -123,9 +304,12 @@ function App() {
   const [translationStatus, setTranslationStatus] = useState('idle')
   const [translationError, setTranslationError] = useState('')
   const [flashcardMode, setFlashcardMode] = useState(false)
+  const [quizMode, setQuizMode] = useState(false)
   const [flashcardIndex, setFlashcardIndex] = useState(0)
   const [flashcardFlipped, setFlashcardFlipped] = useState(false)
   const [shuffledOrder, setShuffledOrder] = useState([])
+  const [quizShuffledOrder, setQuizShuffledOrder] = useState([])
+  const [quizShuffleVersion, setQuizShuffleVersion] = useState(0)
   const currentRequest = useRef(null)
 
   useEffect(() => {
@@ -184,6 +368,7 @@ function App() {
   function selectSong(song) {
     setSelectedSong(song)
     setFlashcardMode(false)
+    setQuizMode(false)
     setFlashcardIndex(0)
     setFlashcardFlipped(false)
     setTranslatedLyrics('')
@@ -225,18 +410,21 @@ function App() {
     if (shuffledOrder.length > 0) {
       setShuffledOrder([])
     } else {
-      const order = lines.map((_, index) => index)
-      for (let index = order.length - 1; index > 0; index -= 1) {
-        const randomIndex = Math.floor(Math.random() * (index + 1))
-        const currentIndex = order[index]
-        order[index] = order[randomIndex]
-        order[randomIndex] = currentIndex
-      }
-      setShuffledOrder(order)
+      setShuffledOrder(shuffleIndices(lines.length))
     }
 
     setFlashcardIndex(0)
     setFlashcardFlipped(false)
+  }
+
+  function toggleQuizShuffle() {
+    const lines = getLyricLines(
+      selectedSong?.plainLyrics || selectedSong?.syncedLyrics || '',
+    )
+    setQuizShuffledOrder((currentOrder) =>
+      currentOrder.length > 0 ? [] : shuffleIndices(lines.length),
+    )
+    setQuizShuffleVersion((version) => version + 1)
   }
 
   async function handleSearch(event) {
@@ -376,12 +564,30 @@ function App() {
                 aria-pressed={flashcardMode}
                 onClick={() => {
                   setFlashcardMode(!flashcardMode)
+                  setQuizMode(false)
                   setFlashcardIndex(0)
                   setFlashcardFlipped(false)
                   setShuffledOrder([])
+                  setQuizShuffledOrder([])
                 }}
               >
                 {flashcardMode ? 'Back to lyrics' : 'Study with flashcards'}
+              </button>
+              <button
+                type="button"
+                className="flashcard-mode-button"
+                aria-pressed={quizMode}
+                onClick={() => {
+                  setQuizMode(!quizMode)
+                  setFlashcardMode(false)
+                  setFlashcardIndex(0)
+                  setFlashcardFlipped(false)
+                  setShuffledOrder([])
+                  setQuizShuffledOrder([])
+                  setQuizShuffleVersion((version) => version + 1)
+                }}
+              >
+                {quizMode ? 'Back to lyrics' : 'Quiz yourself'}
               </button>
             </div>
             {flashcardMode ? (
@@ -405,6 +611,18 @@ function App() {
                   setFlashcardIndex(flashcardIndex + 1)
                   setFlashcardFlipped(false)
                 }}
+              />
+            ) : quizMode ? (
+              <FlashcardQuiz
+                key={quizShuffleVersion}
+                originalLines={getLyricLines(
+                  selectedSong.plainLyrics || selectedSong.syncedLyrics || '',
+                )}
+                translatedLines={getLyricLines(translatedLyrics)}
+                status={translationStatus}
+                error={translationError}
+                order={quizShuffledOrder}
+                onToggleShuffle={toggleQuizShuffle}
               />
             ) : (
               <div className="song-columns">
