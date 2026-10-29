@@ -1,6 +1,116 @@
 import { useEffect, useRef, useState } from 'react'
 import './App.css'
 
+function getLyricLines(lyrics = '') {
+  return lyrics
+    .split(/\r?\n/)
+    .map((line) =>
+      line.replace(/^\s*\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]\s*/, '').trim(),
+    )
+    .filter(Boolean)
+}
+
+function FlashcardStudy({
+  originalLines,
+  translatedLines,
+  status,
+  error,
+  order,
+  index,
+  flipped,
+  onFlip,
+  onToggleShuffle,
+  onPrevious,
+  onNext,
+}) {
+  const lineIndex = order[index] ?? index
+  const translation = translatedLines[lineIndex]
+
+  if (originalLines.length === 0) {
+    return (
+      <p className="flashcard-message">
+        Lyrics are not available for flashcards.
+      </p>
+    )
+  }
+
+  return (
+    <section className="flashcard-study" aria-label="Lyrics flashcards">
+      {status === 'loading' && (
+        <p className="flashcard-message" aria-live="polite">
+          Preparing translated flashcards…
+        </p>
+      )}
+      {status === 'error' && (
+        <p className="flashcard-error" role="alert">
+          {error}
+        </p>
+      )}
+      {status === 'success' && (
+        <>
+          {translatedLines.length !== originalLines.length && (
+            <p className="flashcard-message">
+              Some translated lines may not align with the original lyrics.
+            </p>
+          )}
+          <div className="flashcard-toolbar">
+            <p className="flashcard-count">
+              Card {index + 1} of {originalLines.length}
+            </p>
+            <button
+              type="button"
+              className="shuffle-button"
+              aria-pressed={order.length > 0}
+              onClick={onToggleShuffle}
+            >
+              {order.length > 0 ? 'Turn shuffle off' : 'Shuffle cards'}
+            </button>
+          </div>
+          <button
+            type="button"
+            className={`flashcard${flipped ? ' is-flipped' : ''}`}
+            onClick={onFlip}
+            aria-label={
+              flipped
+                ? 'Show original lyric'
+                : 'Show translated lyric'
+            }
+            aria-pressed={flipped}
+          >
+            <span className="flashcard-side-label">
+              {flipped ? 'Translation' : 'Original lyric'}
+            </span>
+            <span className="flashcard-text">
+              {flipped
+                ? translation || 'No matching translated line is available.'
+                : originalLines[lineIndex]}
+            </span>
+            <span className="flashcard-hint">Click to flip</span>
+          </button>
+          <nav className="flashcard-navigation" aria-label="Flashcard navigation">
+            <button
+              type="button"
+              onClick={onPrevious}
+              disabled={index === 0}
+              aria-label="Previous flashcard"
+            >
+              <span aria-hidden="true">←</span> Previous
+            </button>
+            <button
+              type="button"
+              onClick={onNext}
+              disabled={index === originalLines.length - 1}
+              aria-label="Next flashcard"
+            >
+              Next <span aria-hidden="true">→</span>
+            </button>
+          </nav>
+        </>
+      )}
+    </section>
+  )
+}
+
 function App() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
@@ -12,6 +122,10 @@ function App() {
   const [translatedLyrics, setTranslatedLyrics] = useState('')
   const [translationStatus, setTranslationStatus] = useState('idle')
   const [translationError, setTranslationError] = useState('')
+  const [flashcardMode, setFlashcardMode] = useState(false)
+  const [flashcardIndex, setFlashcardIndex] = useState(0)
+  const [flashcardFlipped, setFlashcardFlipped] = useState(false)
+  const [shuffledOrder, setShuffledOrder] = useState([])
   const currentRequest = useRef(null)
 
   useEffect(() => {
@@ -69,6 +183,9 @@ function App() {
 
   function selectSong(song) {
     setSelectedSong(song)
+    setFlashcardMode(false)
+    setFlashcardIndex(0)
+    setFlashcardFlipped(false)
     setTranslatedLyrics('')
     setTranslationError('')
     setTranslationStatus(
@@ -78,6 +195,7 @@ function App() {
 
   function handleTargetLanguageChange(event) {
     setTargetLanguage(event.target.value)
+    setFlashcardFlipped(false)
     setTranslatedLyrics('')
     setTranslationError('')
     setTranslationStatus(
@@ -89,6 +207,7 @@ function App() {
 
   function handleSourceLanguageChange(event) {
     setSourceLanguage(event.target.value)
+    setFlashcardFlipped(false)
     setTranslatedLyrics('')
     setTranslationError('')
     setTranslationStatus(
@@ -96,6 +215,28 @@ function App() {
         ? 'loading'
         : 'idle',
     )
+  }
+
+  function toggleFlashcardShuffle() {
+    const lines = getLyricLines(
+      selectedSong?.plainLyrics || selectedSong?.syncedLyrics || '',
+    )
+
+    if (shuffledOrder.length > 0) {
+      setShuffledOrder([])
+    } else {
+      const order = lines.map((_, index) => index)
+      for (let index = order.length - 1; index > 0; index -= 1) {
+        const randomIndex = Math.floor(Math.random() * (index + 1))
+        const currentIndex = order[index]
+        order[index] = order[randomIndex]
+        order[randomIndex] = currentIndex
+      }
+      setShuffledOrder(order)
+    }
+
+    setFlashcardIndex(0)
+    setFlashcardFlipped(false)
   }
 
   async function handleSearch(event) {
@@ -228,7 +369,45 @@ function App() {
                 {selectedSong.artistName || 'Unknown artist'}
               </p>
             </header>
-            <div className="song-columns">
+            <div className="study-mode-control">
+              <button
+                type="button"
+                className="flashcard-mode-button"
+                aria-pressed={flashcardMode}
+                onClick={() => {
+                  setFlashcardMode(!flashcardMode)
+                  setFlashcardIndex(0)
+                  setFlashcardFlipped(false)
+                  setShuffledOrder([])
+                }}
+              >
+                {flashcardMode ? 'Back to lyrics' : 'Study with flashcards'}
+              </button>
+            </div>
+            {flashcardMode ? (
+              <FlashcardStudy
+                originalLines={getLyricLines(
+                  selectedSong.plainLyrics || selectedSong.syncedLyrics || '',
+                )}
+                translatedLines={getLyricLines(translatedLyrics)}
+                status={translationStatus}
+                error={translationError}
+                order={shuffledOrder}
+                index={flashcardIndex}
+                flipped={flashcardFlipped}
+                onToggleShuffle={toggleFlashcardShuffle}
+                onFlip={() => setFlashcardFlipped(!flashcardFlipped)}
+                onPrevious={() => {
+                  setFlashcardIndex(flashcardIndex - 1)
+                  setFlashcardFlipped(false)
+                }}
+                onNext={() => {
+                  setFlashcardIndex(flashcardIndex + 1)
+                  setFlashcardFlipped(false)
+                }}
+              />
+            ) : (
+              <div className="song-columns">
               <section className="lyrics-panel" aria-labelledby="original-lyrics-title">
                 <div className="language-heading">
                   <h2 id="original-lyrics-title">Original lyrics</h2>
@@ -305,7 +484,8 @@ function App() {
                   </p>
                 )}
               </section>
-            </div>
+              </div>
+            )}
           </article>
         </main>
       ) : (
@@ -367,6 +547,12 @@ function App() {
           </section>
         </main>
       )}
+      <footer className="page-footnote">
+        <p>
+          Translations are generated by machine translation. Important context
+          may be missed, which can lead to incorrect translations.
+        </p>
+      </footer>
     </>
   )
 }
